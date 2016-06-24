@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset=utf-8 />
+    <title>U.S. Energy Variety</title>
+    <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+
+    <script src="http://cdn.leafletjs.com/leaflet/v0.7.7/leaflet.js"></script>
+
+    <link rel="stylesheet" href="http://cdn.leafletjs.com/leaflet/v0.7.7/leaflet.css" />
+    <link href='http://fonts.googleapis.com/css?family=Lato' rel='stylesheet' type='text/css'>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #ccc7a3;
+            font-family: Lato, sans-serif;
+            color: #0D0000;
+        }
+        header {
+            padding: 6px 10%;
+        }
+        h1 {
+            display: inline-block;
+            margin-right: 20px;
+            color: #001323;
+        }
+        h2 {
+            display: inline-block;
+            color: #001323;
+        }
+        #map {
+            width: 80%;
+            height: 540px;
+            margin: 10px auto;
+        }
+        footer {
+            padding: 6px 10%;
+            width: 80%;
+        }
+        p {
+            font-size: 1em;
+            color: #001323;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>Generation Variety:</h1>
+        <h2>How Robust is Power Generation Regionally?</h2>
+    </header>
+
+    <div id='map'></div>
+
+    <footer>
+        <p>Map authored by Bryan J. Haviland</p>
+        <p>Source Data: U.S. Energy Information Administration - http://www.eia.gov/electricity/data/eia923/</p>
+    </footer>
+
+    <script src="power-plants.js"></script>
+    <script>
+
+       var map = L.map('map', {
+          center: [36,-94],
+          zoom: 4,
+      });
+        
+        var radiusCircle = L.circle([0,-180], 500000, {
+            fillColor: "white",
+            fillOpacity: .1,
+            color: "yellow",
+            opacity: .2,
+            stroke: false,
+            weight: 2,
+        }).addTo(map);
+             
+        var commonStyles = {
+                weight: 1,
+                stroke: 1,
+                fillOpacity: .8
+        }
+        
+        var layerInfo = {
+            hydroLayer: {source:"Hydro", color:'#c7e0fc'}, 
+            petroleumLayer: {source:"Petroleum", color:'#efce60'},
+            nuclearLayer: {source:"Nuclear", color:'#8cff37'},
+            natGasLayer: {source:"Natural Gas", color:'#f5ff00'}
+        };
+
+        var geoJsonLayers = {};
+
+        for(var layer in layerInfo) {     
+            geoJsonLayers[layer] = L.geoJson(plants, {
+                pointToLayer: function(feature,latlng) {
+                    return L.circleMarker(latlng, commonStyles);
+                },
+                filter: function(feature) {
+                    if(feature.properties.fuel_source[layerInfo[layer].source]) {
+                        return feature;
+                    }
+                },
+                style: function(feature) {
+                    return {
+                        color: layerInfo[layer].color,
+                        fillColor: layerInfo[layer].color,
+                        radius: getRadius(feature.properties.fuel_source[layerInfo[layer].source])
+                    } 
+                } 
+            }).addTo(map);        
+            }
+        
+        var allPlants = L.geoJson(plants);
+              
+        map.on('click', function(e) {
+            
+            var stats = {};
+            allPlants.eachLayer(function(layer){
+                var distance = e.latlng.distanceTo(layer.getLatLng())/1000;
+                if (distance <=500){
+                    for (var source in layer.feature.properties.fuel_source){
+                        if (stats[source]){
+                            stats[source] += layer.feature.properties.fuel_source[source];
+                        } else{
+                            stats[source] = layer.feature.properties.fuel_source[source];
+                        }
+                    }
+                }
+            })
+            
+                        
+            radiusCircle.setLatLng(e.latlng);
+            
+            var statsContent = "";
+            for (stat in stats){
+                statsContent += stat +": "+ stats[stat].toLocaleString() +"MW <br>"
+            }
+            radiusCircle.bindPopup(statsContent).openPopup();
+            
+            for(var lyr in layerInfo) {
+                
+                geoJsonLayers[lyr].eachLayer(function(layer) {
+                    
+                    var distance = e.latlng.distanceTo(layer.getLatLng())/1000;
+                    if(distance > 500) {
+                        layer.setStyle({
+                            stroke: false,
+                            fill: false
+                        });  
+                    } else {
+                        layer.setStyle({
+                            stroke: true,
+                            fill: true  
+                        });
+                        
+                        var content = "<b>"+ layer.feature.properties.plant_name +"</b>" +"<br>"+
+                            layerInfo[lyr].source +" "+ layer.feature.properties.fuel_source[layerInfo[lyr].source].toLocaleString() +"MW<br>";
+                        
+                        content += "<b>"+distance.toLocaleString()+"</b>km from click point."
+                        
+                        layer.bindPopup(content);
+                    } 
+                });
+            }
+        });  
+  
+      
+      var tiles = L.tileLayer('http://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
+          attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="http://cartodb.com/attributions">CartoDB</a>',
+          subdomains: 'abcd',
+          maxZoom: 19
+      });  
+      
+      tiles.addTo(map);
+        
+            
+    
+       function getRadius(val) {
+            var radius = Math.sqrt(val/Math.PI);
+            return radius * .8;   
+        }
+
+        var sourcesLabels = {
+            "<b style='color:#c7e0fc'>Hydro</b>": geoJsonLayers.hydroLayer,
+            "<b style='color:#efce60'>Petroleum</b>": geoJsonLayers.petroleumLayer,
+            "<b style='color:#8cff37'>Nuclear</b>": geoJsonLayers.nuclearLayer,
+            "<b style='color:#f5ff00'>Natural Gas</b>": geoJsonLayers.natGasLayer
+        }
+
+        L.control.layers(null, sourcesLabels, { collapsed:false }).addTo(map);
+
+                      
+    </script>
+    
+</body>
+
+</html>
